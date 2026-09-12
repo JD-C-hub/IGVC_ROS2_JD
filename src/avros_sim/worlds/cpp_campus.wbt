@@ -44121,33 +44121,16 @@ DEF water Transform {
     }
   ]
 }
-# AVROS Vehicle — spawned between Building 9 and Business building
-# Car PROTO: controller "<extern>" enables webots_ros2_driver connection.
-Car {
+# AVROS differential-drive vehicle — spawned between Building 9 and Business building
+# The two HingeJoints are the complete drive system: left/right wheel speeds
+# are controlled independently by avros_vehicle_driver.
+Robot {
   name "avros"
   translation 83.98 33.48 0.5
   rotation 0 0 1 0.3439
-  controller "<extern>"
-  boundingObject Pose {
-    translation 0.615 0 0.6
-    children [
-      Box {
-        size 1.6 0.8 0.3
-      }
-    ]
-  }
-  physics Physics {
-    density -1
-    mass 150
-  }
-  wheelbase 1.23
-  trackFront 0.9
-  trackRear 0.9
-  maxSteeringAngle 0.489
-  extensionSlot [
+  children [
     Solid {
-      name "chassis"
-      translation 0.615 0 0
+      translation 0 0 0.45
       children [
         Shape {
           appearance PBRAppearance {
@@ -44156,14 +44139,232 @@ Car {
             metalness 0.3
           }
           geometry Box {
-            size 1.8 0.9 0.5
+            size 0.8 0.65 0.35
           }
+        }
+      ]
+      name "chassis"
+    }
+    DEF LEFT_TRACK Track {
+      translation 0 0.32 0.24
+      children [
+        TrackWheel {
+          position -0.23 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        TrackWheel {
+          position 0 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        TrackWheel {
+          position 0.23 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+      name "left_track"
+      contactMaterial "track material"
+      boundingObject Group {
+        children [
+          Pose {
+            translation 0 0 0.02
+            rotation 1 0 0 1.5708
+            children [
+              Box {
+                size 0.56 0.1 0.1
+              }
+            ]
+          }
+        ]
+      }
+      physics Physics {
+      }
+      device [
+        LinearMotor {
+          name "left_drive"
+          maxForce 500
+        }
+      ]
+      animatedGeometry Group {
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.12 0.12 0.12
+              roughness 0.9
+              metalness 0.1
+            }
+          }
+        ]
+      }
+    }
+    DEF RIGHT_TRACK Track {
+      translation 0 -0.32 0.24
+      children [
+        TrackWheel {
+          position -0.23 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        TrackWheel {
+          position 0 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        TrackWheel {
+          position 0.23 0.02
+          radius 0.06
+          children [
+            Pose {
+              children [
+                Solid {
+                  children [
+                    Shape {
+                      appearance PBRAppearance {
+                        baseColor 0.12 0.12 0.12
+                        roughness 1
+                        metalness 0
+                      }
+                      geometry Cylinder {
+                        height 0.1
+                        radius 0.05
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+      name "right_track"
+      contactMaterial "track material"
+      boundingObject Group {
+        children [
+          Pose {
+            translation 0 0 0.02
+            rotation 1 0 0 1.5708
+            children [
+              Box {
+                size 0.56 0.1 0.1
+              }
+            ]
+          }
+        ]
+      }
+      physics Physics {
+      }
+      device [
+        LinearMotor {
+          name "right_drive"
+          maxForce 500
         }
       ]
     }
     VelodynePuck {
+      translation 0 0 0.66
       name "velodyne"
-      translation 0 0 0.5
       enablePhysics FALSE
     }
     InertialUnit {
@@ -44176,8 +44377,20 @@ Car {
       name "imu_accel"
     }
     GPS {
-      name "gps"
       accuracy 0.01
     }
   ]
+  boundingObject Pose {
+    translation 0 0 0.45
+    children [
+      Box {
+        size 0.8 0.65 0.35
+      }
+    ]
+  }
+  physics Physics {
+    density -1
+    mass 150
+  }
+  controller "<extern>"
 }

@@ -9,7 +9,7 @@
 -->
 <robot name="avros_webots">
   <webots>
-    <!-- Vehicle control: cmd_vel → Car API (setCruisingSpeed/setSteeringAngle) -->
+    <!-- Vehicle control: cmd_vel → native differential-drive wheel motors -->
     <plugin type="avros_sim.avros_vehicle_driver.AvrosVehicleDriver" />
 
     <!-- IMU: handled by avros_vehicle_driver plugin (combined Imu on /imu/data) -->

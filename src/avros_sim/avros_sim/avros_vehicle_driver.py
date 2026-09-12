@@ -1,29 +1,19 @@
-"""AVROS Webots vehicle driver — cmd_vel to wheel motors + combined IMU.
+"""AVROS Webots driver for the native differential-drive vehicle.
 
-Uses direct Robot API motor control (no Driver API / wbu_driver_*).
-The Car PROTO exposes front wheel motors and steering motors that can
-be controlled directly, avoiding the Driver API's double-stepping issue.
-
-Front wheels: left_front_wheel, right_front_wheel (velocity control)
-Steering: left_steer, right_steer (position control)
-Rear wheels: passive (no motors, just sensors/brakes)
-
-Note: Webots Car PROTO steering sign is inverted from ROS convention —
-positive motor position turns RIGHT, negative turns LEFT. The steering
-angle is negated before applying to motors to match ROS cmd_vel convention
-(positive angular.z = left turn).
+The Webots model exposes one powered track on each side.  The driver converts
+the commanded body twist into left/right track belt velocities, matching the
+kinematics used by the real vehicle's actuator node.
 """
 
 import rclpy
 import rclpy.parameter
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
-from math import atan2
+from math import cos, sin
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
-WHEELBASE = 1.23
-TRACK_FRONT = 0.9
-MAX_STEERING_RAD = 0.489
-WHEEL_RADIUS = 0.36  # Car PROTO default wheel radius
+TRACK_WIDTH = 0.7366  # Production vehicle track gauge, in metres
 
 
 class AvrosVehicleDriver:
@@ -32,15 +22,13 @@ class AvrosVehicleDriver:
         self.__robot = webots_node.robot
         timestep = int(self.__robot.getBasicTimeStep())
 
-        # Steering motors (position control)
-        self.__left_steer = self.__robot.getDevice('left_steer')
-        self.__right_steer = self.__robot.getDevice('right_steer')
+        # One independently controlled wheel on each side is the differential
+        # drive pair; there is no steering subsystem in this model.
+        self.__left_motor = self.__robot.getDevice('left_drive')
+        self.__right_motor = self.__robot.getDevice('right_drive')
 
-        # Drive motors (velocity control) — front-wheel drive
-        self.__left_motor = self.__robot.getDevice('left_front_wheel')
-        self.__right_motor = self.__robot.getDevice('right_front_wheel')
-
-        # Set drive motors to velocity mode
+        # Track LinearMotors use belt speed in metres per second.  Position
+        # infinity selects continuous velocity mode, just as for a HingeMotor.
         for motor in [self.__left_motor, self.__right_motor]:
             if motor:
                 motor.setPosition(float('inf'))
@@ -65,48 +53,43 @@ class AvrosVehicleDriver:
             Twist, 'cmd_vel', self.__cmd_vel_callback, 1
         )
         self.__imu_pub = self.__node.create_publisher(Imu, '/imu/data', 10)
+        self.__odom_pub = self.__node.create_publisher(
+            Odometry,
+            '/wheel_odom',
+            QoSProfile(
+                depth=10,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+            ),
+        )
 
-        self.__speed = 0.0
-        self.__steering = 0.0
+        self.__linear_velocity = 0.0
+        self.__angular_velocity = 0.0
+        self.__odom_x = 0.0
+        self.__odom_y = 0.0
+        self.__odom_yaw = 0.0
+        self.__last_step_time = self.__robot.getTime()
 
     def __cmd_vel_callback(self, msg):
-        v = msg.linear.x
-        omega = msg.angular.z
-
-        self.__speed = v
-
-        if abs(v) > 0.01:
-            steering_rad = atan2(omega * WHEELBASE, abs(v))
-        elif abs(omega) > 0.01:
-            steering_rad = MAX_STEERING_RAD if omega > 0 else -MAX_STEERING_RAD
-        else:
-            steering_rad = 0.0
-
-        steering_rad = max(-MAX_STEERING_RAD,
-                           min(MAX_STEERING_RAD, steering_rad))
-        self.__steering = steering_rad
+        self.__linear_velocity = msg.linear.x
+        self.__angular_velocity = msg.angular.z
 
     def step(self):
         rclpy.spin_once(self.__node, timeout_sec=0)
 
-        speed = self.__speed
-        steering = self.__steering
+        speed = self.__linear_velocity
+        angular_velocity = self.__angular_velocity
 
-        # Negate steering for Webots Car PROTO convention (positive = right)
-        steer_cmd = -steering
-        if self.__left_steer and self.__right_steer:
-            self.__left_steer.setPosition(steer_cmd)
-            self.__right_steer.setPosition(steer_cmd)
-
-        # Set wheel velocities (rad/s)
-        wheel_vel = speed / WHEEL_RADIUS
+        # Differential-drive inverse kinematics, matching actuator_node.py.
+        left_speed = speed - angular_velocity * TRACK_WIDTH / 2.0
+        right_speed = speed + angular_velocity * TRACK_WIDTH / 2.0
         if self.__left_motor:
-            self.__left_motor.setVelocity(wheel_vel)
+            self.__left_motor.setVelocity(left_speed)
         if self.__right_motor:
-            self.__right_motor.setVelocity(wheel_vel)
+            self.__right_motor.setVelocity(right_speed)
 
         # Publish combined IMU
         self.__publish_imu()
+        self.__publish_odometry(speed, angular_velocity)
 
     def __publish_imu(self):
         # getQuaternion() returns [x, y, z, w] in Webots ENU frame (R2025a default)
@@ -143,3 +126,31 @@ class AvrosVehicleDriver:
         msg.linear_acceleration_covariance[8] = 0.1
 
         self.__imu_pub.publish(msg)
+
+    def __publish_odometry(self, speed, angular_velocity):
+        """Publish the velocity odometry consumed by both EKF instances."""
+        now = self.__robot.getTime()
+        dt = max(0.0, now - self.__last_step_time)
+        self.__last_step_time = now
+
+        self.__odom_yaw += angular_velocity * dt
+        self.__odom_x += speed * cos(self.__odom_yaw) * dt
+        self.__odom_y += speed * sin(self.__odom_yaw) * dt
+
+        stamp = self.__node.get_clock().now().to_msg()
+        msg = Odometry()
+        msg.header.stamp = stamp
+        msg.header.frame_id = 'odom'
+        msg.child_frame_id = 'base_link'
+        msg.pose.pose.position.x = self.__odom_x
+        msg.pose.pose.position.y = self.__odom_y
+        msg.pose.pose.orientation.z = sin(self.__odom_yaw / 2.0)
+        msg.pose.pose.orientation.w = cos(self.__odom_yaw / 2.0)
+        msg.twist.twist.linear.x = speed
+        msg.twist.twist.angular.z = angular_velocity
+        msg.pose.covariance[0] = 0.25
+        msg.pose.covariance[7] = 0.25
+        msg.pose.covariance[35] = 0.1
+        msg.twist.covariance[0] = 0.05
+        msg.twist.covariance[35] = 0.05
+        self.__odom_pub.publish(msg)

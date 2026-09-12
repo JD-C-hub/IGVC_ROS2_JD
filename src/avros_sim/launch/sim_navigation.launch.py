@@ -142,7 +142,12 @@ def generate_launch_description():
             name='navsat_transform',
             parameters=[
                 navsat_config,
-                {'use_sim_time': True},
+                {
+                    'use_sim_time': True,
+                    # Keep the simulated GPS/map frame aligned with the
+                    # datum used to generate cpp_campus_graph.geojson.
+                    'datum': [34.059270, -117.820934, 0.0],
+                },
             ],
             remappings=[
                 ('imu/data', '/imu/data'),
